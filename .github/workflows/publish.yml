@@ -1,6 +1,8 @@
 name: Publish current content
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [daily-publish]
   schedule:
     - cron: '7,27,47 * * * *'
 permissions:
