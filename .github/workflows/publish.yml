@@ -38,6 +38,7 @@ jobs:
           blob=get('code/build.tar.gz')
           if hashlib.sha256(blob).hexdigest()!=config['revision']:raise RuntimeError('Build revision mismatch')
           package=pathlib.Path('build.tar.gz');package.write_bytes(blob)
+          with open(os.environ['GITHUB_ENV'],'a') as output:output.write('BUILD_REVISION='+config['revision']+'\n')
           destination=pathlib.Path('private-build');destination.mkdir()
           with tarfile.open(package) as archive:archive.extractall(destination,filter='data')
           (destination/'artifacts').mkdir(exist_ok=True)
