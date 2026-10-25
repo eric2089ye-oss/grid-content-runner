@@ -1,0 +1,45 @@
+name: Publish current content
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,27,47 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: static-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CF_PUBLISH_TOKEN: ${{ secrets.CF_PUBLISH_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      KV_NAMESPACE: ${{ secrets.KV_NAMESPACE }}
+      PAGES_PROJECT: ${{ secrets.PAGES_PROJECT }}
+      SITE_HOST: ${{ secrets.SITE_HOST }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Retrieve private build inputs
+        shell: python
+        run: |
+          import os, json, hashlib, pathlib, tarfile, urllib.request
+          base=f"https://api.cloudflare.com/client/v4/accounts/{os.environ['CF_ACCOUNT_ID']}/storage/kv/namespaces/{os.environ['KV_NAMESPACE']}/values/"
+          def get(key):
+              req=urllib.request.Request(base+key,headers={'Authorization':'Bearer '+os.environ['CF_PUBLISH_TOKEN']})
+              with urllib.request.urlopen(req,timeout=60) as response:return response.read()
+          config=json.loads(get('release/config'))
+          if config.get('enabled') is not True:raise RuntimeError('Publication disabled')
+          blob=get('code/build.tar.gz')
+          if hashlib.sha256(blob).hexdigest()!=config['revision']:raise RuntimeError('Build revision mismatch')
+          package=pathlib.Path('build.tar.gz');package.write_bytes(blob)
+          destination=pathlib.Path('private-build');destination.mkdir()
+          with tarfile.open(package) as archive:archive.extractall(destination,filter='data')
+          (destination/'artifacts').mkdir(exist_ok=True)
+      - name: Validate, publish and verify
+        run: python private-build/scripts/cloud_daily.py
